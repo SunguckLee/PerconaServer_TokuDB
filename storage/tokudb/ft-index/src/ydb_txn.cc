@@ -239,8 +239,9 @@ static int toku_txn_abort(DB_TXN * txn,
     return r;
 }
 
-static int toku_txn_xa_prepare (DB_TXN *txn, TOKU_XA_XID *xid) {
+static int toku_txn_xa_prepare (DB_TXN *txn, uint32_t flags, TOKU_XA_XID *xid) {
     int r = 0;
+    uint32_t nosync;
     if (!txn) {
         r = EINVAL;
         goto exit;
@@ -253,6 +254,7 @@ static int toku_txn_xa_prepare (DB_TXN *txn, TOKU_XA_XID *xid) {
     // Take the mo lock as soon as a non-readonly txn is found
     bool holds_mo_lock;
     holds_mo_lock = false;
+    nosync = (flags & DB_TXN_NOSYNC)!=0 || (db_txn_struct_i(txn)->flags&DB_TXN_NOSYNC);
     if (!toku_txn_is_read_only(db_txn_struct_i(txn)->tokutxn)) {
         // A readonly transaction does no logging, and therefore does not
         // need the MO lock.
@@ -274,7 +276,7 @@ static int toku_txn_xa_prepare (DB_TXN *txn, TOKU_XA_XID *xid) {
     assert(!db_txn_struct_i(txn)->child);
     TOKUTXN ttxn;
     ttxn = db_txn_struct_i(txn)->tokutxn;
-    toku_txn_prepare_txn(ttxn, xid);
+    toku_txn_prepare_txn(ttxn, nosync, xid);
     TOKULOGGER logger;
     logger = txn->mgrp->i->logger;
     LSN do_fsync_lsn;
@@ -291,14 +293,14 @@ exit:
 
 // requires: must hold the multi operation lock. it is
 //           released in toku_txn_xa_prepare before the fsync.
-static int toku_txn_prepare (DB_TXN *txn, uint8_t gid[DB_GID_SIZE]) {
+static int toku_txn_prepare (DB_TXN *txn, uint32_t nosync, uint8_t gid[DB_GID_SIZE]) {
     TOKU_XA_XID xid;
     TOKU_ANNOTATE_NEW_MEMORY(&xid, sizeof(xid));
     xid.formatID=0x756b6f54; // "Toku"
     xid.gtrid_length=DB_GID_SIZE/2;  // The maximum allowed gtrid length is 64.  See the XA spec in source:/import/opengroup.org/C193.pdf page 20.
     xid.bqual_length=DB_GID_SIZE/2; // The maximum allowed bqual length is 64.
     memcpy(xid.data, gid, DB_GID_SIZE);
-    return toku_txn_xa_prepare(txn, &xid);
+    return toku_txn_xa_prepare(txn, nosync, &xid);
 }
 
 static int toku_txn_txn_stat (DB_TXN *txn, struct txn_stat **txn_stat) {

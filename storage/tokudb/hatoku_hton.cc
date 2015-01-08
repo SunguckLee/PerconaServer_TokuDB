@@ -830,6 +830,7 @@ static int tokudb_rollback(handlerton * hton, THD * thd, bool all) {
 static int tokudb_xa_prepare(handlerton* hton, THD* thd, bool all) {
     TOKUDB_DBUG_ENTER("");
     int r = 0;
+    uint32_t syncflag = THDVAR(thd, commit_sync) ? 0 : DB_TXN_NOSYNC;
 
     /* if support_xa is disable, just return */
     if (!THDVAR(thd, support_xa)) {
@@ -848,7 +849,7 @@ static int tokudb_xa_prepare(handlerton* hton, THD* thd, bool all) {
         thd_get_xid(thd, (MYSQL_XID*) &thd_xid);
         // test hook to induce a crash on a debug build
         DBUG_EXECUTE_IF("tokudb_crash_prepare_before", DBUG_SUICIDE(););
-        r = txn->xa_prepare(txn, &thd_xid);
+        r = txn->xa_prepare(txn, syncflag, &thd_xid);
         // test hook to induce a crash on a debug build
         DBUG_EXECUTE_IF("tokudb_crash_prepare_after", DBUG_SUICIDE(););
     } 
